@@ -1,0 +1,186 @@
+<configuration>
+
+    <appender name="STDOUT"
+              class="ch.qos.logback.core.ConsoleAppender">
+        <!-- encoders are assigned the type ch.qos.logback.classic.encoder.PatternLayoutEncoder 
+            by default -->
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} %line - %msg%n
+            </pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.apache.commons" level="ERROR" />
+    <logger name="org.apache.fop" level="ERROR" />
+
+    <!--  o.a.x.i.loader.spi.ImageImplRegistry -->
+    <logger name="org.apache.xmlgraphics.image.loader" level="ERROR" />
+
+    <!-- docx4j loggers -->
+    <logger name="org.docx4j" level="ERROR" />
+
+    <logger name="org.docx4j.Docx4J" level="ERROR" />
+
+    <logger name="org.docx4j.TraversalUtil" level="ERROR" />
+
+    <logger name="org.docx4j.XmlUtils" level="ERROR" />
+
+    <logger name="org.docx4j.utils.ResourceUtils" level="ERROR" />
+
+    <logger name="org.docx4j.convert.in" level="ERROR" />
+
+    <logger name="org.docx4j.convert.in.xhtml" level="ERROR" />
+
+    <logger name="org.docx4j.convert.in.xhtml.ListHelper" level="ERROR" />
+
+    <logger name="org.docx4j.convert.out" level="ERROR" />
+
+    <logger
+            name="org.docx4j.convert.out.common.AbstractConversionContext"
+            level="ERROR" />
+
+    <logger name="org.docx4j.convert.out.common.Preprocess" level="ERROR" />
+
+    <logger name="org.docx4j.convert.out.common.preprocess" level="ERROR" />
+
+    <logger
+            name="org.docx4j.convert.out.common.preprocess.FieldsCombiner"
+            level="ERROR" />
+
+    <!-- PDF output via XSL FO: change this to ERROR to hide messages -->
+    <logger
+            name="org.docx4j.convert.out.common.writer.AbstractMessageWriter"
+            level="ERROR" />
+
+    <logger name="org.docx4j.convert.out.fo" level="ERROR" />
+
+    <logger name="org.docx4j.convert.out.html.ListsToContentControls" level="ERROR" />
+
+    <logger name="org.docx4j.diff" level="ERROR" />
+
+    <logger name="com.topologi" level="ERROR" />
+
+    <logger name="org.docx4j.fonts" level="ERROR" />
+    <logger name="org.docx4j.fonts.fop.complexscripts.fonts.OTFAdvancedTypographicTableReader" level="ERROR" />
+    <!-- 
+    <logger name="org.docx4j.fonts.fop.fonts.autodetect.FontERRORFinder" level="ERROR" /> 
+    <logger name="org.docx4j.fonts.BestMatchingMapper" level="ERROR" />
+    <logger name="org.docx4j.fonts.PhysicalFonts" level="ERROR" />
+    <logger name="org.docx4j.fonts.RunFontSelector" level="ERROR" />
+ -->
+
+    <logger name="org.docx4j.jaxb" level="ERROR" />
+
+    <logger name="org.docx4j.model" level="ERROR" />
+
+    <logger name="org.docx4j.model.fields" level="ERROR" />
+
+    <logger name="org.docx4j.model.listnumbering" level="ERROR" />
+
+    <logger name="org.docx4j.model.PropertyResolver" level="ERROR" />
+
+    <logger name="org.docx4j.model.structure" level="ERROR" />
+
+    <logger name="org.docx4j.model.styles" level="ERROR" />
+
+    <logger name="org.docx4j.model.table" level="ERROR" />
+
+    <logger name="org.docx4j.openpackaging" level="ERROR" />
+    <Logger name="com.openhtmltopdf.load" level="ERROR"/>
+
+    <logger name="org.docx4j.openpackaging.URIHelper" level="ERROR" />
+
+    <logger name="org.docx4j.openpackaging.io3" level="ERROR" />
+    <logger name="org.docx4j.openpackaging.io3.stores.ZipPartStore" level="ERROR" />
+    <logger name="org.docx4j.openpackaging.io3.LoadFromZipNG" level="ERROR" />
+
+    <logger name="org.docx4j.openpackaging.packages" level="ERROR" />
+
+    <logger name="org.docx4j.openpackaging.parts" level="ERROR" />
+
+    <logger name="org.docx4j.openpackaging.parts.relationships" level="ERROR" />
+
+    <logger name="org.docx4j.openpackaging.parts.Parts" level="ERROR" />
+
+    <logger name="org.docx4j.openpackaging.parts.ThemePart" level="ERROR" />
+
+    <logger
+            name="org.docx4j.openpackaging.parts.WordprocessingML.BinaryPartAbstractImage"
+            level="ERROR" />
+
+    <logger name="org.docx4j.openpackaging.parts.AbstractFontPart" level="ERROR" />
+    <logger name="org.docx4j.openpackaging.parts.WordprocessingML.ObfuscatedFontPart" level="ERROR" />
+    <logger name="org.docx4j.openpackaging.parts.WordprocessingML.FontTablePart" level="ERROR" />
+
+    <!--  to see the fop config  -->
+    <logger name="org.docx4j.convert.out.fo.renderers" level="ERROR" />
+
+
+
+    <logger name="org.docx4j.services.client" level="ERROR" />
+
+    <logger name="org.docx4j.toc" level="ERROR" />
+
+    <logger name="org.docx4j.wml" level="ERROR" />
+
+    <logger name="org.docx4j.utils.XPathFactoryUtil" level="ERROR" />
+
+    <logger name="org.docx4j.org.xhtmlrenderer" level="ERROR" />
+
+    <logger name="org.docx4j.org.xhtmlrenderer" level="ERROR"/>
+
+    <logger name="org.pptx4j" level="ERROR"/>
+
+    <logger name="org.docx4j.convert.out.documents4j.local" level="ERROR"/>
+
+
+
+    <!-- OpenDoPE functionality loggers -->
+    <logger name="org.docx4j.model.datastorage" level="ERROR" />
+
+    <logger
+            name="org.docx4j.model.datastorage.OpenDoPEHandlerComponents" level="ERROR" />
+
+    <logger
+            name="org.docx4j.openpackaging.parts.CustomXmlDataStoragePart" level="ERROR" />
+
+    <logger name="org.docx4j.openpackaging.parts.XmlPart" level="ERROR" />
+
+    <logger name="org.opendope.conditions.Xpathref" level="ERROR" />
+
+    <logger name="org.opendope" level="ERROR" />
+
+
+    <!-- Enterprise edition loggers -->
+    <logger name="com.plutext.merge" level="ERROR" />
+
+    <logger name="com.plutext.merge.BlockRange" level="ERROR" />
+
+    <logger name="com.plutext.merge.HeaderFooterUtils" level="ERROR" />
+
+    <logger name="com.plutext.merge.CustomXmlPartHandler" level="ERROR" />
+
+    <logger name="com.plutext.merge.RFontsThemeResolver" level="ERROR" />
+
+    <logger name="com.plutext.merge.altchunk" level="ERROR" />
+
+    <logger name="com.plutext.merge.pptx" level="ERROR" />
+
+    <logger name="com.plutext.cmis" level="ERROR" />
+
+    <logger name="org.apache.jcp.xml.dsig.internal.dom" level="ERROR" />
+
+    <logger name="com.plutext.crypt.dsig" level="ERROR" />
+
+    <logger
+            name="org.docx4j.openpackaging.parts.digitalsignature.XmlSignaturePart"
+            level="ERROR" />
+
+    <logger name="com.plutext.demo.diagnostics" level="ERROR" />
+
+
+    <root level="ERROR">
+        <appender-ref ref="STDOUT" />
+    </root>
+
+</configuration>

@@ -1,0 +1,318 @@
+plugins {
+    id 'java-library'
+    id 'jacoco'
+    id 'org.sonarqube' version '6.3.1.5724'
+}
+
+jar.archiveBaseName = "pdf-extension"
+group 'app.krista.extensions.essentials.documents'
+version '2.0.17'
+
+/*
+ * Use extension.name for archiveBaseName, extension.version for version.
+ * Resulting jar: <extension.name>-<extension.version>.jar e.g. pdf-extension-2.0.6.jar
+ */
+
+def computedBaseName = "pdf"
+def computedVersion = "local"
+
+compileJava.dependsOn clean
+
+tasks.register("setReleaseProperties") {
+    dependsOn("generateReleaseProperties")
+    doFirst {
+        def releasePropsFile = file("release.properties")
+        if (releasePropsFile.exists()) {
+            def props = new Properties()
+            releasePropsFile.withInputStream { stream -> props.load(stream) }
+            computedBaseName = (props['extension.name'] ?: computedBaseName).replaceAll(/\s+/, "")
+            computedVersion = props['extension.version'] ?: computedVersion
+
+            System.setProperty("extensionVersion", computedVersion)
+            project.ext.set("finalBaseName", computedBaseName)
+            project.version = computedVersion
+
+            println "✔ Loaded extension name = ${computedBaseName}, version = ${computedVersion}"
+        } else {
+            logger.warn("⚠ release.properties not found; using default values.")
+            project.ext.set("finalBaseName", computedBaseName)
+            project.version = computedVersion
+        }
+    }
+}
+
+if (rootProject.file('builder.txt').canRead()) {
+    ext.buildnr = rootProject.file('builder.txt').text.trim()
+} else {
+    ext.buildnr = "0"
+}
+
+task updateVersion {
+    doFirst {
+        project.ext.newbuildnr = Integer.parseInt(project.ext.buildnr) + 1
+        def versionBuilder = new StringBuilder()
+        versionBuilder.append("Building extension version: ")
+                     .append(version.toString())
+                     .append("-")
+                     .append(project.ext.newbuildnr)
+        print versionBuilder.toString()
+        rootProject.file('builder.txt').text = project.ext.newbuildnr
+        System.clearProperty("extensionVersion")
+        def extensionVersionBuilder = new StringBuilder()
+        extensionVersionBuilder.append(version.toString()).append("-").append(project.ext.newbuildnr)
+        System.setProperty("extensionVersion", extensionVersionBuilder.toString())
+    }
+}
+compileJava.dependsOn clean
+compileJava.dependsOn updateVersion
+
+System.setProperty("extensionVersion", version.toString())
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    mavenLocal()
+    maven {
+        url "https://packages.cicd.in.antbrains.com/artifactory/libs-release"
+    }
+    mavenCentral()
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+    finalizedBy jacocoTestReport // Generate coverage report after tests run
+}
+
+// ============================================================
+// SonarQube Configuration
+// ============================================================
+sonar {
+    properties {
+        property("sonar.projectName", "SonarScanner for Krista Global Catalog (pdf with JaCoCo code coverage)")
+        property("sonar.projectKey", "sonar-scanner-pdf")
+        property("sonar.sources", "src/main/java")
+        property("sonar.tests", "src/test/java")
+        property("sonar.java.binaries", "build/classes/java/main")
+        property("sonar.java.test.binaries", "build/classes/java/test")
+        property("sonar.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/jacocoTestReport.xml")
+        property("sonar.junit.reportPaths", "build/test-results/test")
+    }
+}
+
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+jacocoTestReport {
+    dependsOn test // Tests must run before generating the report
+    reports {
+        xml.required = true   // Required for SonarQube
+        html.required = true  // Useful for local viewing
+        csv.required = false
+    }
+}
+
+// Ensure Sonar runs only after JaCoCo report generation
+tasks.named("sonar") {
+    dependsOn jacocoTestReport
+}
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.40
+            }
+        }
+    }
+}
+
+// Enable coverage verification on build
+check.dependsOn jacocoTestCoverageVerification
+
+dependencies {
+
+    annotationProcessor 'app.krista:extension-impl-anno-processors:1.0.120'
+    compileOnly 'app.krista:krista-apis:1.0.120'
+    compileOnly 'org.glassfish.hk2:hk2-api:2.6.1'
+    implementation group: 'com.itextpdf', name: 'itextpdf', version: '5.5.13.2'
+    implementation 'org.apache.poi:poi-ooxml:5.2.3'
+    implementation 'org.apache.pdfbox:pdfbox:2.0.30'
+    implementation 'fr.opensagres.xdocreport:fr.opensagres.poi.xwpf.converter.pdf:2.1.0'
+
+    implementation 'org.apache.pdfbox:pdfbox:2.0.30'
+    implementation 'fr.opensagres.xdocreport:fr.opensagres.poi.xwpf.converter.xhtml:2.0.4'
+
+    implementation 'org.jsoup:jsoup:1.14.3'
+    implementation 'org.xhtmlrenderer:flying-saucer-pdf:9.1.22'
+    implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
+
+    // Tabula for table extraction from PDF
+    implementation 'technology.tabula:tabula:1.0.5'
+
+    implementation 'org.glassfish.jersey.media:jersey-media-multipart:2.35'
+    implementation group: 'org.glassfish.jaxb', name: 'jaxb-runtime', version: '2.3.1'
+    implementation 'org.docx4j:docx4j-core:11.4.8'
+    implementation 'org.docx4j:docx4j-ImportXHTML:11.4.8'
+    implementation 'org.docx4j:docx4j-JAXB-ReferenceImpl:11.4.8'
+    implementation 'io.opentelemetry:opentelemetry-exporter-otlp:1.39.0'
+    implementation 'io.opentelemetry:opentelemetry-exporter-logging:1.50.0'
+
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'// Add Jackson for JSON processing
+
+    testImplementation 'app.krista:krista-apis:1.0.115'
+    testImplementation 'com.kristasoft.common:common-test:1.0.26'
+    testImplementation 'org.apache.pdfbox:pdfbox:2.0.27'
+
+    // JUnit 5 dependencies for testing
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.14.2'
+    testImplementation 'org.mockito:mockito-inline:5.2.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-suite-engine:1.10.3'
+}
+
+tasks.register('createSourceDir', Exec) {
+    dependsOn processResources
+    commandLine "mkdir", "-p", "$projectDir/build/classes/java/main/META-INF/project"
+}
+
+tasks.register('copyGradleFile', Exec) {
+    dependsOn createSourceDir
+    commandLine "cp", "$projectDir/build.gradle", "$projectDir/build/classes/java/main/META-INF/project/build.gradle"
+}
+
+tasks.register('includeSources', Exec) {
+    dependsOn copyGradleFile
+    commandLine "cp", "-r", "$projectDir/src", "$projectDir/build/classes/java/main/META-INF/project/src"
+}
+
+import java.util.regex.Pattern
+
+/*
+    Task to generate release.properties files in below format.
+    extension.version=<version>
+    extension.name=<name>
+    domain.name=<domain>
+    ecosystem.name=<ecosystem>
+    Every extension developer should update extensionFilePath with relative path.
+*/
+
+abstract class GenerateReleasePropertiesTask extends DefaultTask {
+    @TaskAction
+    def generateProperties() {
+        // Update this path to point to your pdf extension main class
+        def extensionFilePath = 'src/main/java/app/krista/extensions/essentials/documents/pdf/PDFExtension.java'
+        def areaFilePath = 'src/main/java/app/krista/extensions/essentials/documents/pdf/catalog/PDFArea.java'
+
+        def extensionFile = project.file(extensionFilePath)
+        def areaFile = project.file(areaFilePath)
+        if (!extensionFile.exists()) {
+            throw new GradleException("Extension file not found: ${extensionFilePath}")
+        }
+        if (!areaFile.exists()) {
+            throw new GradleException("Area file not found: ${areaFilePath}")
+        }
+        def properties = new Properties()
+        def keyValuePattern = Pattern.compile(/(\w+)\s*=\s*"([^"]+)"/)
+
+        // Extract Extension annotation info
+        extractAnnotationInfo(extensionFile, "@Extension", keyValuePattern) { key, value ->
+            if (key == "name") {
+                properties.setProperty("extension.name", value)
+                logger.lifecycle("Found extension name: ${value}")
+            } else if (key == "version") {
+                properties.setProperty("extension.version", value)
+                logger.lifecycle("Found extension version: ${value}")
+            }
+        }
+
+        // Extract Domain annotation info
+        extractAnnotationInfo(areaFile, "@Domain", keyValuePattern) { key, value ->
+            if (key == "name") {
+                properties.setProperty("domain.name", value)
+                logger.lifecycle("Found domain name: ${value}")
+            } else if (key == "ecosystemName") {
+                properties.setProperty("ecosystem.name", value)
+                logger.lifecycle("Found ecosystem name: ${value}")
+            }
+        }
+
+        if (!properties.getProperty('extension.version')) {
+            throw new GradleException("Could not find extension version in ${extensionFilePath}")
+        }
+        if (!properties.getProperty('domain.name') || !properties.getProperty('ecosystem.name')) {
+            throw new GradleException("Could not find domain name or ecosystem name in ${extensionFilePath}")
+        }
+
+        def releasePropertiesFile = project.file('release.properties')
+        def content = properties.collect { key, value -> "${key}=${value}" }.join('\n')
+        releasePropertiesFile.text = content + '\n'
+        logger.lifecycle("Generated release.properties with content:\n${content}")
+    }
+
+    /**
+     * Extracts annotation information from a file
+     * @param file The file to extract from
+     * @param annotationName The annotation name to look for
+     * @param keyValuePattern The regex pattern to extract key-value pairs
+     * @param processProperty Closure to process each property
+     */
+    private static void extractAnnotationInfo(File file, String annotationName, Pattern keyValuePattern, Closure processProperty) {
+        StringBuilder annotationText = new StringBuilder()
+        boolean inAnnotation = false
+        file.eachLine { line ->
+            line = line.trim()
+            if (line.contains(annotationName)) {
+                inAnnotation = true
+            }
+            if (inAnnotation) {
+                annotationText.append(line)
+                if (line.contains(")")) {
+                    inAnnotation = false
+                    def matcher = keyValuePattern.matcher(annotationText.toString())
+                    while (matcher.find()) {
+                        def key = matcher.group(1)
+                        def value = matcher.group(2)
+                        processProperty.call(key, value)
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.register('generateReleaseProperties', GenerateReleasePropertiesTask) {
+    group = 'build'
+    description = 'Generates release.properties file with extension version and domain information'
+}
+
+tasks.named("jar") {
+    dependsOn tasks.named("generateReleaseProperties")
+}
+
+
+jar {
+    manifest {
+    }
+    // This task ensures that release.properties is read *after* it has been generated.
+    // Gradle's configuration phase runs before tasks like `generateReleaseProperties` execute,
+    // so directly reading the release.properties file earlier results in missing or default values.
+    dependsOn tasks.named("setReleaseProperties")
+    archiveBaseName = project.ext.has("finalBaseName") ? project.ext.finalBaseName : "pdf-extension"
+    manifest {}
+    from {
+        configurations.runtimeClasspath.collect {
+            it.isDirectory() ? it : zipTree(it)
+        }
+    }
+    exclude 'META-INF/*.RSA', 'META-INF/*.SF', 'META-INF/*.DSA'
+    duplicatesStrategy = "exclude"
+}
