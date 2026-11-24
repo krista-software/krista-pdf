@@ -13,7 +13,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package app.krista.extensions.essentials.documents.pdf.service;
@@ -296,6 +296,100 @@ public class PdfSplitterTest {
         
         try (PDDocument doc = PDDocument.load(result.get(1))) {
             assertEquals(1, doc.getNumberOfPages());
+        }
+    }
+
+    // ==================== Output Validation Tests (reload-and-remove) ====================
+
+    @Test
+    @DisplayName("Split output files should be valid, loadable PDFs")
+    void testSplitAtPageNumber_OutputsAreValidPdfs() throws IOException {
+        // Arrange
+        File testPdf = createTestPdf("valid_output_test.pdf", 6);
+        filesToCleanup.add(testPdf);
+
+        // Act
+        List<File> result = pdfSplitter.splitAtPageNumber(testPdf, 4);
+        filesToCleanup.addAll(result);
+
+        // Assert - each output should be independently loadable and valid
+        for (File file : result) {
+            assertDoesNotThrow(() -> {
+                try (PDDocument doc = PDDocument.load(file)) {
+                    assertTrue(doc.getNumberOfPages() > 0,
+                            "Loaded PDF should have at least 1 page");
+                }
+            }, "Split file should be a valid, loadable PDF: " + file.getName());
+        }
+    }
+
+    @Test
+    @DisplayName("Total pages across splits should equal original page count")
+    void testSplitAtPageNumber_TotalPagesPreserved() throws IOException {
+        // Arrange
+        int originalPageCount = 8;
+        File testPdf = createTestPdf("total_pages_test.pdf", originalPageCount);
+        filesToCleanup.add(testPdf);
+
+        // Act
+        List<File> result = pdfSplitter.splitAtPageNumber(testPdf, 5);
+        filesToCleanup.addAll(result);
+
+        // Assert
+        int totalSplitPages = 0;
+        for (File file : result) {
+            try (PDDocument doc = PDDocument.load(file)) {
+                totalSplitPages += doc.getNumberOfPages();
+            }
+        }
+        assertEquals(originalPageCount, totalSplitPages,
+                "Total pages across all splits should equal original page count");
+    }
+
+    @Test
+    @DisplayName("Split files should not exceed original file size")
+    void testSplitAtPageNumber_OutputSizeNotExceedOriginal() throws IOException {
+        // Arrange
+        File testPdf = createTestPdf("size_test.pdf", 10);
+        filesToCleanup.add(testPdf);
+        long originalSize = testPdf.length();
+
+        // Act
+        List<File> result = pdfSplitter.splitAtPageNumber(testPdf, 6);
+        filesToCleanup.addAll(result);
+
+        // Assert
+        for (File file : result) {
+            assertTrue(file.length() <= originalSize,
+                    String.format("Split %s (%d bytes) should not exceed original (%d bytes)",
+                            file.getName(), file.length(), originalSize));
+        }
+    }
+
+    @Test
+    @DisplayName("Split output should be re-loadable after save (round-trip)")
+    void testSplitAtPageNumber_RoundTrip() throws IOException {
+        // Arrange
+        File testPdf = createTestPdf("round_trip_test.pdf", 6);
+        filesToCleanup.add(testPdf);
+
+        // Act
+        List<File> result = pdfSplitter.splitAtPageNumber(testPdf, 3);
+        filesToCleanup.addAll(result);
+
+        // Assert - save and reload each split to verify integrity
+        for (File split : result) {
+            File resaved = new File("resaved_" + split.getName());
+            filesToCleanup.add(resaved);
+
+            try (PDDocument loaded = PDDocument.load(split)) {
+                loaded.save(resaved);
+            }
+
+            try (PDDocument reloaded = PDDocument.load(resaved)) {
+                assertTrue(reloaded.getNumberOfPages() > 0,
+                        "Re-saved PDF should load correctly with pages intact");
+            }
         }
     }
 

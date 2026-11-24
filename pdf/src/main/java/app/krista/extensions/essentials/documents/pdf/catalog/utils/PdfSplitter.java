@@ -13,13 +13,13 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package app.krista.extensions.essentials.documents.pdf.catalog.utils;
 
+import app.krista.extensions.essentials.documents.pdf.util.PdfSplitUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.text.PDFTextStripper;
 
 import java.io.File;
@@ -33,11 +33,30 @@ public class PdfSplitter {
 
     // Method to split the PDF based on your criteria
     public static List<File> splitPdfByCriteria(File inputFile) throws IOException {
+        // Phase 1: determine section boundaries by analysing text
+        List<int[]> sections = determineSections(inputFile);
+
+        // Phase 2: create each section using reload-and-remove (no shared-resource bloat)
         List<File> generatedPdfFiles = new ArrayList<>();
+        int partNumber = 1;
+        for (int[] section : sections) {
+            File newPdfFile = saveSplitDocument(inputFile, section[0], section[1], partNumber++);
+            generatedPdfFiles.add(newPdfFile);
+        }
+
+        return generatedPdfFiles;
+    }
+
+    /**
+     * Analyses the PDF text to determine section boundaries.
+     * A section ends when the last line of a page matches "Total units = &lt;integer&gt;"
+     * or contains "End of report".
+     */
+    private static List<int[]> determineSections(File inputFile) throws IOException {
+        List<int[]> sections = new ArrayList<>();
 
         try (PDDocument document = PDDocument.load(inputFile)) {
             PDFTextStripper pdfStripper = new PDFTextStripper();
-            List<int[]> sections = new ArrayList<>();
             int startPage = 0;
             boolean inSection = false;
             String currentPageText;
@@ -51,11 +70,11 @@ public class PdfSplitter {
                 pdfStripper.setEndPage(i + 1);
                 currentPageText = pdfStripper.getText(document);
 
-                // Split current page text into lines and check only the last line for "Total units = <integer>"
+                // Split current page text into lines and check only the last line
                 String[] lines = currentPageText.trim().split("\\r?\\n");
                 String lastLine = lines[lines.length - 1];
 
-                // Check if the last line matches the pattern "Total units = <integer>" or if it contains "End of report"
+                // Check if the last line matches the pattern or contains "End of report"
                 Matcher matcher = pattern.matcher(lastLine);
                 if (matcher.find() || lastLine.contains("End of report")) {
                     if (inSection) {
@@ -76,33 +95,18 @@ public class PdfSplitter {
             if (inSection) {
                 sections.add(new int[]{startPage, document.getNumberOfPages() - 1});
             }
-
-            // Split the document and save each section to a new file
-            int partNumber = 1;
-            for (int[] section : sections) {
-                File newPdfFile = saveSplitDocument(document, section[0], section[1], partNumber++);
-                generatedPdfFiles.add(newPdfFile);  // Add the generated file to the list
-            }
         }
 
-        return generatedPdfFiles;  // Return the list of generated PDF files
+        return sections;
     }
 
     // Helper method to save a specific range of pages as a separate PDF
-    private static File saveSplitDocument(PDDocument document, int startPage, int endPage, int partNumber) throws IOException {
-        PDDocument newDocument = new PDDocument();
-        for (int i = startPage; i <= endPage; i++) {
-            PDPage page = document.getPage(i);
-            // Use importPage to properly copy page with all resources
-            newDocument.importPage(page);
+    private static File saveSplitDocument(File sourceFile, int startPage, int endPage, int partNumber) throws IOException {
+        // endPage is inclusive, createDocumentWithPageRange expects exclusive end
+        try (PDDocument newDocument = PdfSplitUtils.createDocumentWithPageRange(sourceFile, startPage, endPage + 1)) {
+            File outputFile = new File("pdf_part_" + partNumber + ".pdf");
+            newDocument.save(outputFile);
+            return outputFile;
         }
-
-        // Define the output file name and path
-        File outputFile = new File("pdf_part_" + partNumber + ".pdf");
-        newDocument.save(outputFile);
-        newDocument.close();
-
-        return outputFile;  // Return the newly created PDF file
     }
 }
-

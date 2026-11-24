@@ -13,7 +13,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package app.krista.extensions.essentials.documents.pdf.util;
@@ -210,6 +210,29 @@ public class PDFHelper {
             return fileName.substring(0, (fileName.lastIndexOf(".")));
         }
         return fileName;
+    }
+
+    /**
+     * Sanitizes a user-supplied name into a safe base file name while PRESERVING the
+     * user's capitalization and internal spacing. Strips any extension the user typed,
+     * removes special characters (keeping letters, digits, spaces, '_' and '-'), and
+     * trims leading/trailing whitespace. Returns the base name WITHOUT an extension;
+     * callers append ".pdf". Returns "" if the input is null or has no valid characters.
+     *
+     * <p>Note: any text after the last '.' is treated as an extension and removed.</p>
+     *
+     * <p>Unlike {@link #getSafeFileName(String)} this does not lowercase, and unlike
+     * {@link #cleanFileName(String)} it does not convert spaces to underscores.</p>
+     *
+     * @param name the user-supplied name (may be null)
+     * @return the sanitized base name without extension, possibly empty
+     */
+    public static String sanitizeFileName(String name) {
+        if (name == null) {
+            return "";
+        }
+        String base = getFileNameWithoutExtension(name);
+        return base.replaceAll("[^\\p{L}\\p{N} _-]", "").trim();
     }
 
     /**

@@ -13,7 +13,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package app.krista.extensions.essentials.documents.pdf;
@@ -26,8 +26,9 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 
 @Java(version = Java.Version.JAVA_21)
-@Extension(version = "2.0.20", name = "PDF", description = "Converts documents to PDF in Krista. v2.1.0: Split PDF output changed to named variables (Pages Before/After Split Page)")
+@Extension(version = "2.0.24", name = "PDF", description = "Converts documents to PDF in Krista. v2.0.24: Added 'Rename PDF File' request (KE-3583)")
 @StaticResource(path = "docs", file = "docs")
+@ChangeLog(file = "confluence/src/main/resources/documentation/releaseNotes.md")
 public final class PDFExtension {
 
     private static final Logger logger = LoggerFactory.getLogger(PDFExtension.class);

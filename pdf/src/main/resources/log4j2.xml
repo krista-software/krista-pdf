@@ -10,7 +10,7 @@
         <Root level="info">
             <AppenderRef ref="console"/>
         </Root>
-        <Logger name="app.krista.extensions.essentials.documents.pdf" additivity="false" level="error">
+        <Logger name="app.krista.extensions.essentials.documents.pdf" additivity="false" level="info">
             <AppenderRef ref="console" />
         </Logger>
     </Loggers>

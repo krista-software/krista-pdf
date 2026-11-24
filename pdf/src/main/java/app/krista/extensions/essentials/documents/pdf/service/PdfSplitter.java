@@ -13,11 +13,12 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package app.krista.extensions.essentials.documents.pdf.service;
 
+import app.krista.extensions.essentials.documents.pdf.util.PdfSplitUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.jvnet.hk2.annotations.Service;
 import org.slf4j.Logger;
@@ -60,14 +61,6 @@ public class PdfSplitter {
      *   <li>File 2: Pages 6-10</li>
      * </ul>
      *
-     * <p><b>Implementation Details:</b></p>
-     * <ul>
-     *   <li>Try-with-resources for automatic resource management</li>
-     *   <li>Early validation before loading PDF</li>
-     *   <li>Extracted helper methods for better readability</li>
-     *   <li>Proper exception handling with resource cleanup</li>
-     * </ul>
-     *
      * @param pdfFile     The PDF file to split
      * @param splitAtPage The page number where the split should occur (1-based index).
      *                    This page will be the first page of the second file.
@@ -81,24 +74,25 @@ public class PdfSplitter {
         // Early validation - fail fast before loading PDF
         validateSplitPageMinimum(splitAtPage);
 
-        // Use try-with-resources for automatic resource management
+        // Load source once just to get the page count, then close it
+        int numberOfPages;
         try (PDDocument document = PDDocument.load(pdfFile)) {
-            int numberOfPages = document.getNumberOfPages();
+            numberOfPages = document.getNumberOfPages();
             logger.debug("PDF has {} pages", numberOfPages);
-
-            // Validate against actual page count
-            validateSplitPageMaximum(splitAtPage, numberOfPages);
-
-            // Generate file metadata
-            String baseName = extractBaseName(pdfFile.getName());
-            long timestamp = System.currentTimeMillis();
-
-            // Split the document
-            List<File> result = createSplitFiles(document, splitAtPage, numberOfPages, baseName, timestamp);
-
-            logger.info("Successfully split PDF '{}' into {} files", pdfFile.getName(), result.size());
-            return result;
         }
+
+        // Validate against actual page count
+        validateSplitPageMaximum(splitAtPage, numberOfPages);
+
+        // Generate file metadata
+        String baseName = extractBaseName(pdfFile.getName());
+        long timestamp = System.currentTimeMillis();
+
+        // Split the document using reload-and-remove
+        List<File> result = createSplitFiles(pdfFile, splitAtPage, numberOfPages, baseName, timestamp);
+
+        logger.info("Successfully split PDF '{}' into {} files", pdfFile.getName(), result.size());
+        return result;
     }
 
     /**
@@ -144,28 +138,28 @@ public class PdfSplitter {
     }
 
     /**
-     * Creates the split PDF files.
+     * Creates the split PDF files using reload-and-remove strategy.
      *
-     * @param sourceDocument The source PDF document
-     * @param splitAtPage    The page number where the split occurs
-     * @param totalPages     Total number of pages in the source document
-     * @param baseName       Base name for output files
-     * @param timestamp      Timestamp for unique file naming
+     * @param sourceFile  The source PDF file on disk
+     * @param splitAtPage The page number where the split occurs
+     * @param totalPages  Total number of pages in the source document
+     * @param baseName    Base name for output files
+     * @param timestamp   Timestamp for unique file naming
      * @return List containing the two split PDF files
      * @throws IOException If an error occurs during file creation
      */
-    private List<File> createSplitFiles(PDDocument sourceDocument, int splitAtPage,
+    private List<File> createSplitFiles(File sourceFile, int splitAtPage,
                                         int totalPages, String baseName, long timestamp) throws IOException {
         List<File> outputFiles = new ArrayList<>();
 
         // Create first part (pages 1 to splitAtPage-1)
-        File firstPart = createPdfPart(sourceDocument, 0, splitAtPage - 1,
+        File firstPart = createPdfPart(sourceFile, 0, splitAtPage - 1,
                 baseName, timestamp, 1, splitAtPage - 1);
         outputFiles.add(firstPart);
         logger.debug("Created first part: {}", firstPart.getName());
 
         // Create second part (pages splitAtPage to end)
-        File secondPart = createPdfPart(sourceDocument, splitAtPage - 1, totalPages,
+        File secondPart = createPdfPart(sourceFile, splitAtPage - 1, totalPages,
                 baseName, timestamp, splitAtPage, totalPages);
         outputFiles.add(secondPart);
         logger.debug("Created second part: {}", secondPart.getName());
@@ -174,9 +168,9 @@ public class PdfSplitter {
     }
 
     /**
-     * Creates a single PDF part from a range of pages.
+     * Creates a single PDF part from a range of pages using reload-and-remove.
      *
-     * @param sourceDocument The source PDF document
+     * @param sourceFile     The source PDF file on disk
      * @param startIndex     Zero-based start index (inclusive)
      * @param endIndex       Zero-based end index (exclusive)
      * @param baseName       Base name for the output file
@@ -186,15 +180,10 @@ public class PdfSplitter {
      * @return The created PDF file
      * @throws IOException If an error occurs during file creation
      */
-    private File createPdfPart(PDDocument sourceDocument, int startIndex, int endIndex,
+    private File createPdfPart(File sourceFile, int startIndex, int endIndex,
                                String baseName, long timestamp,
                                int startPageLabel, int endPageLabel) throws IOException {
-        try (PDDocument partDocument = new PDDocument()) {
-            // Copy pages to new document using importPage to properly copy all resources
-            for (int i = startIndex; i < endIndex; i++) {
-                partDocument.importPage(sourceDocument.getPage(i));
-            }
-
+        try (PDDocument partDocument = PdfSplitUtils.createDocumentWithPageRange(sourceFile, startIndex, endIndex)) {
             // Generate file name and save
             String fileName = String.format("%s_%d_pages_%d_to_%d.pdf",
                     baseName, timestamp, startPageLabel, endPageLabel);

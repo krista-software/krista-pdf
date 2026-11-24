@@ -13,7 +13,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package app.krista.extensions.essentials.documents.pdf.catalog.utils;
@@ -29,32 +29,37 @@ import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@DisplayName("PdfSplitter (catalog) Unit Tests")
 class PdfSplitterTest {
 
     private File testPdfFile;
+    private final List<File> filesToCleanup = new ArrayList<>();
 
     @BeforeEach
     void setUp() throws IOException {
         // Create a test PDF file with multiple pages
         testPdfFile = createTestPdfWithSections();
+        filesToCleanup.add(testPdfFile);
     }
 
     @AfterEach
     void tearDown() {
-        // Clean up test files
-        if (testPdfFile != null && testPdfFile.exists()) {
-            testPdfFile.delete();
-        }
         // Clean up generated split files
         File currentDir = new File(".");
         File[] pdfParts = currentDir.listFiles((dir, name) -> name.startsWith("pdf_part_") && name.endsWith(".pdf"));
         if (pdfParts != null) {
             for (File part : pdfParts) {
                 part.delete();
+            }
+        }
+        for (File f : filesToCleanup) {
+            if (f != null && f.exists()) {
+                f.delete();
             }
         }
     }
@@ -127,7 +132,132 @@ class PdfSplitterTest {
         }
     }
 
+    @Test
+    @DisplayName("Should produce correct number of sections for multi-section PDF")
+    void testSplitPdfByCriteria_CorrectSectionCount() throws IOException {
+        // The default test PDF has 3 pages: page1 (content), page2 (Total units = 100), page3 (content)
+        // Expected: section [0,1] (pages 1-2 ending at "Total units"), section [2,2] (page 3, open section)
+        List<File> result = PdfSplitter.splitPdfByCriteria(testPdfFile);
+
+        assertNotNull(result);
+        assertEquals(2, result.size(), "Should produce exactly 2 sections");
+    }
+
+    @Test
+    @DisplayName("Should produce valid PDFs with correct page counts per section")
+    void testSplitPdfByCriteria_CorrectPageCountsPerSection() throws IOException {
+        List<File> result = PdfSplitter.splitPdfByCriteria(testPdfFile);
+
+        // First section: pages 0-1 (2 pages)
+        try (PDDocument doc = PDDocument.load(result.get(0))) {
+            assertEquals(2, doc.getNumberOfPages(),
+                    "First section should contain 2 pages (up to 'Total units' boundary)");
+        }
+
+        // Second section: page 2 (1 page, the trailing open section)
+        try (PDDocument doc = PDDocument.load(result.get(1))) {
+            assertEquals(1, doc.getNumberOfPages(),
+                    "Second section should contain 1 page (trailing content)");
+        }
+    }
+
+    @Test
+    @DisplayName("Should account for all original pages across split files")
+    void testSplitPdfByCriteria_AllPagesAccountedFor() throws IOException {
+        List<File> result = PdfSplitter.splitPdfByCriteria(testPdfFile);
+
+        int totalSplitPages = 0;
+        for (File file : result) {
+            try (PDDocument doc = PDDocument.load(file)) {
+                totalSplitPages += doc.getNumberOfPages();
+            }
+        }
+
+        try (PDDocument original = PDDocument.load(testPdfFile)) {
+            assertEquals(original.getNumberOfPages(), totalSplitPages,
+                    "Sum of pages across all splits should equal original page count");
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle PDF with multiple section boundaries")
+    void testSplitPdfByCriteria_MultipleSectionBoundaries() throws IOException {
+        File multiSectionPdf = createPdfWithMultipleSections();
+        filesToCleanup.add(multiSectionPdf);
+
+        List<File> result = PdfSplitter.splitPdfByCriteria(multiSectionPdf);
+
+        assertNotNull(result);
+        assertEquals(3, result.size(), "Should produce 3 sections for 3 section boundaries");
+
+        // Verify each split file is a valid, loadable PDF
+        for (File file : result) {
+            assertTrue(file.exists(), "Split file should exist");
+            assertTrue(file.length() > 0, "Split file should not be empty");
+            try (PDDocument doc = PDDocument.load(file)) {
+                assertTrue(doc.getNumberOfPages() > 0, "Split file should have at least 1 page");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle PDF with no section boundaries as single section")
+    void testSplitPdfByCriteria_NoSectionBoundaries() throws IOException {
+        File noSectionPdf = createPdfWithNoSectionBoundaries();
+        filesToCleanup.add(noSectionPdf);
+
+        List<File> result = PdfSplitter.splitPdfByCriteria(noSectionPdf);
+
+        assertNotNull(result);
+        assertEquals(1, result.size(), "Should produce 1 section when no boundaries found");
+
+        try (PDDocument doc = PDDocument.load(result.get(0))) {
+            assertEquals(3, doc.getNumberOfPages(),
+                    "Single section should contain all original pages");
+        }
+    }
+
+    @Test
+    @DisplayName("Split output files should not exceed original file size")
+    void testSplitPdfByCriteria_OutputSizeNotExceedOriginal() throws IOException {
+        long originalSize = testPdfFile.length();
+        List<File> result = PdfSplitter.splitPdfByCriteria(testPdfFile);
+
+        for (File file : result) {
+            assertTrue(file.length() <= originalSize,
+                    String.format("Split file %s (%d bytes) should not exceed original (%d bytes)",
+                            file.getName(), file.length(), originalSize));
+        }
+    }
+
     // Helper methods to create test PDFs
+
+    private File createPdfWithMultipleSections() throws IOException {
+        File tempFile = File.createTempFile("multi_section_", ".pdf");
+        try (PDDocument document = new PDDocument()) {
+            // Section 1: page 1 ends with Total units
+            addPageWithText(document, "Section 1 data\nTotal units = 50");
+            // Section 2: pages 2-3, page 3 ends with Total units
+            addPageWithText(document, "Section 2 page 1\nMore data here");
+            addPageWithText(document, "Section 2 page 2\nTotal units = 200");
+            // Section 3: pages 4-5, page 5 ends with End of report
+            addPageWithText(document, "Section 3 page 1\nSome content");
+            addPageWithText(document, "Final section data\nEnd of report");
+            document.save(tempFile);
+        }
+        return tempFile;
+    }
+
+    private File createPdfWithNoSectionBoundaries() throws IOException {
+        File tempFile = File.createTempFile("no_section_", ".pdf");
+        try (PDDocument document = new PDDocument()) {
+            addPageWithText(document, "Page 1 regular content");
+            addPageWithText(document, "Page 2 regular content");
+            addPageWithText(document, "Page 3 regular content");
+            document.save(tempFile);
+        }
+        return tempFile;
+    }
 
     private File createTestPdfWithSections() throws IOException {
         File tempFile = File.createTempFile("test_pdf_", ".pdf");

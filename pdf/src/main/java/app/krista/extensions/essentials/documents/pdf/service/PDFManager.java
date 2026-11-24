@@ -13,7 +13,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package app.krista.extensions.essentials.documents.pdf.service;
@@ -21,6 +21,7 @@ package app.krista.extensions.essentials.documents.pdf.service;
 import app.krista.extensions.essentials.documents.pdf.util.Constants;
 import app.krista.extensions.essentials.documents.pdf.util.KristaMediaClientUtil;
 import app.krista.extensions.essentials.documents.pdf.util.PDFHelper;
+import app.krista.extensions.essentials.documents.pdf.util.PdfSplitUtils;
 import app.krista.model.base.EntityValue;
 import app.krista.model.entity.EntityDefinition;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
@@ -33,7 +34,6 @@ import fr.opensagres.poi.xwpf.converter.xhtml.XHTMLOptions;
 import jakarta.xml.bind.JAXBElement;
 import org.apache.pdfbox.multipdf.PDFMergerUtility;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFPictureData;
 import org.docx4j.XmlUtils;
@@ -58,6 +58,7 @@ import javax.inject.Inject;
 import java.io.*;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -84,6 +85,13 @@ public final class PDFManager {
      * Minimum timestamp value for date detection (Jan 1, 2000 00:00:00 UTC).
      * Values below this are treated as regular numbers, not timestamps.
      */
+    /**
+     * PDFs at or below this page count use the remove-pages strategy (preserves
+     * original stream compression → smaller output files, manageable O(n²) cost).
+     * PDFs above this threshold use importPage one at a time (O(n), O(1) memory).
+     */
+    private static final int SPLIT_SIZE_THRESHOLD = 100;
+
     private static final long TIMESTAMP_MIN_VALUE = 946684800000L;
 
     /**
@@ -1196,84 +1204,125 @@ public final class PDFManager {
         for (InputStream inputStream : sourcesList) {
             inputStream.close();
         }
-        return new File(pdfFile);
+
+        // Optimize: filter unused per-page resources and deduplicate identical
+        // ones carried over from individual source files.
+        // NOTE: uses filterUnusedPageResources (not stripUnusedResources) to
+        // preserve document-level data (bookmarks, forms, metadata, etc.).
+        File mergedFile = new File(pdfFile);
+        try (PDDocument mergedDoc = PDDocument.load(mergedFile)) {
+            PdfSplitUtils.filterUnusedPageResources(mergedDoc);
+            PdfSplitUtils.deduplicateResources(mergedDoc);
+            mergedDoc.save(mergedFile);
+        }
+
+        return mergedFile;
     }
 
     public List<File> splitPDF(File pdfFile) throws IOException {
         List<File> outputFiles = new ArrayList<>();
 
-        PDDocument document = PDDocument.load(pdfFile);
-        int numberOfPages = document.getNumberOfPages();
-
-        // Extract base name (e.g., "abc" from "abc.pdf")
-        String baseName = pdfFile.getName().replaceFirst("[.][^.]+$", "");
-
-        // Capture epoch timestamp in milliseconds for uniqueness
-        long epochMillis = System.currentTimeMillis();
-
-        for (int i = 0; i < numberOfPages; i++) {
-            PDDocument newDocument = new PDDocument();
-            PDPage page = document.getPage(i);
-            // Use importPage to properly copy page with all resources
-            newDocument.importPage(page);
-
-            // Build a unique output file name
-            String outputFileName = String.format("%s_%d_page_%d.pdf", baseName, epochMillis, i + 1);
-            File outputFile = new File(outputFileName);
-
-            newDocument.save(outputFile);
-            outputFiles.add(outputFile);
-            newDocument.close();
+        int numberOfPages;
+        try (PDDocument probe = PDDocument.load(pdfFile)) {
+            numberOfPages = probe.getNumberOfPages();
         }
 
-        document.close();
+        log.info("splitPDF started: file={}, pages={}, sizeBytes={}", pdfFile.getName(), numberOfPages, pdfFile.length());
+
+        String baseName = pdfFile.getName().replaceFirst("[.][^.]+$", "");
+        long epochMillis = System.currentTimeMillis();
+
+        if (numberOfPages <= SPLIT_SIZE_THRESHOLD) {
+            // Small PDFs: load into byte[] once, then extract each page via remove-pages.
+            // Preserves original stream compression (JBIG2/CCITT/etc.) — produces
+            // the smallest possible output files. O(n²) page removals are in-memory
+            // and trivially fast for ≤100 pages.
+            splitWithRemovePages(pdfFile, numberOfPages, baseName, epochMillis, outputFiles);
+        } else {
+            // Large PDFs: importPage one at a time — O(n) time, O(1) memory.
+            // Only ONE single-page PDDocument in memory per iteration.
+            splitWithImportPage(pdfFile, numberOfPages, baseName, epochMillis, outputFiles);
+        }
+
+        log.info("splitPDF completed: file={}, totalPages={}", pdfFile.getName(), numberOfPages);
         return outputFiles;
+    }
+
+    private void splitWithRemovePages(File pdfFile, int numberOfPages,
+                                      String baseName, long epochMillis,
+                                      List<File> outputFiles) throws IOException {
+        byte[] pdfBytes = Files.readAllBytes(pdfFile.toPath());
+        for (int i = 0; i < numberOfPages; i++) {
+            int pageNumber = i + 1;
+            log.info("splitPDF() - Splitting page {}/{} from file='{}'", pageNumber, numberOfPages, pdfFile.getName());
+            try (PDDocument pageDoc = PDDocument.load(pdfBytes)) {
+                for (int j = pageDoc.getNumberOfPages() - 1; j >= 0; j--) {
+                    if (j != i) pageDoc.removePage(j);
+                }
+                PdfSplitUtils.stripUnusedResources(pageDoc);
+                File outputFile = savePageDoc(pageDoc, baseName, epochMillis, pageNumber, numberOfPages);
+                outputFiles.add(outputFile);
+            }
+        }
+    }
+
+    private void splitWithImportPage(File pdfFile, int numberOfPages,
+                                     String baseName, long epochMillis,
+                                     List<File> outputFiles) throws IOException {
+        try (PDDocument source = PDDocument.load(pdfFile)) {
+            for (int i = 0; i < numberOfPages; i++) {
+                int pageNumber = i + 1;
+                log.info("splitPDF() - Splitting page {}/{} from file='{}'", pageNumber, numberOfPages, pdfFile.getName());
+                try (PDDocument pageDoc = new PDDocument()) {
+                    pageDoc.importPage(source.getPage(i));
+                    PdfSplitUtils.stripUnusedResources(pageDoc);
+                    File outputFile = savePageDoc(pageDoc, baseName, epochMillis, pageNumber, numberOfPages);
+                    outputFiles.add(outputFile);
+                }
+            }
+        }
+    }
+
+    private File savePageDoc(PDDocument pageDoc, String baseName,
+                             long epochMillis, int pageNumber, int totalPages) throws IOException {
+        String outputFileName = String.format("%s_%d_page_%d.pdf", baseName, epochMillis, pageNumber);
+        File outputFile = new File(outputFileName);
+        pageDoc.save(outputFile);
+        log.info("splitPDF() - Page {}/{} saved as '{}', sizeBytes={}", pageNumber, totalPages, outputFileName, outputFile.length());
+        return outputFile;
     }
 
 
     public List<File> splitPDFIntoParts(File pdfFile, int pageThreshold) throws IOException {
         List<File> outputFiles = new ArrayList<>();
 
-        // Load the PDF document
-        PDDocument document = PDDocument.load(pdfFile);
-        int numberOfPages = document.getNumberOfPages();
+        // Load source once just to get the page count
+        int numberOfPages;
+        try (PDDocument document = PDDocument.load(pdfFile)) {
+            numberOfPages = document.getNumberOfPages();
+        }
 
         // Check if the number of pages is greater than the threshold
         if (numberOfPages > pageThreshold) {
-            // Determine the middle page index
             int middle = numberOfPages / 2;
 
-            // First half of the document
-            PDDocument firstHalfDocument = new PDDocument();
-            for (int i = 0; i < middle; i++) {
-                PDPage page = document.getPage(i);
-                // Use importPage to properly copy page with all resources
-                firstHalfDocument.importPage(page);
+            // First half: pages [0, middle)
+            try (PDDocument firstHalfDocument = PdfSplitUtils.createDocumentWithPageRange(pdfFile, 0, middle)) {
+                File firstHalfFile = new File(FIRST_HALF);
+                firstHalfDocument.save(firstHalfFile);
+                outputFiles.add(firstHalfFile);
             }
-            File firstHalfFile = new File(FIRST_HALF);
-            firstHalfDocument.save(firstHalfFile);
-            outputFiles.add(firstHalfFile);
-            firstHalfDocument.close();
 
-            // Second half of the document
-            PDDocument secondHalfDocument = new PDDocument();
-            for (int i = middle; i < numberOfPages; i++) {
-                PDPage page = document.getPage(i);
-                // Use importPage to properly copy page with all resources
-                secondHalfDocument.importPage(page);
+            // Second half: pages [middle, numberOfPages)
+            try (PDDocument secondHalfDocument = PdfSplitUtils.createDocumentWithPageRange(pdfFile, middle, numberOfPages)) {
+                File secondHalfFile = new File(SECOND_HALF);
+                secondHalfDocument.save(secondHalfFile);
+                outputFiles.add(secondHalfFile);
             }
-            File secondHalfFile = new File(SECOND_HALF);
-            secondHalfDocument.save(secondHalfFile);
-            outputFiles.add(secondHalfFile);
-            secondHalfDocument.close();
-
         } else {
             // If the number of pages is less than or equal to the threshold, return the whole file
             outputFiles.add(pdfFile);
         }
-
-        // Close the original document
-        document.close();
 
         return outputFiles;
     }

@@ -13,7 +13,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package app.krista.extensions.essentials.documents.pdf.catalog;
@@ -71,6 +71,7 @@ public final class PDFArea {
     private final ConvertPdfToHtmlHelper convertPdfToHtmlHelper;
     private final PdfToHtmlConversionService pdfToHtmlConversionService;
     private final SplitPdfAtPageNumberHelper splitPdfAtPageNumberHelper;
+    private final RenamePdfHelper renamePdfHelper;
     private final Invoker invoker;
     private static final Logger logger = LoggerFactory.getLogger(PDFArea.class);
 
@@ -87,7 +88,8 @@ public final class PDFArea {
                    SplitPdfConditionHelper splitPdfConditionHelper,
                    ConvertExcelMultipleSheetsHelper convertExcelMultipleSheetsHelper,
                    ConvertPdfToHtmlHelper convertPdfToHtmlHelper,
-                   PdfToHtmlConversionService pdfToHtmlConversionService, SplitPdfAtPageNumberHelper splitPdfAtPageNumberHelper, Invoker invoker) {
+                   PdfToHtmlConversionService pdfToHtmlConversionService, SplitPdfAtPageNumberHelper splitPdfAtPageNumberHelper,
+                   RenamePdfHelper renamePdfHelper, Invoker invoker) {
         this.pdfManager = pdfManager;
         this.excelManager = excelManager;
         this.docxManager = docxManager;
@@ -109,6 +111,7 @@ public final class PDFArea {
         this.convertPdfToHtmlHelper = convertPdfToHtmlHelper;
         this.pdfToHtmlConversionService = pdfToHtmlConversionService;
         this.splitPdfAtPageNumberHelper = splitPdfAtPageNumberHelper;
+        this.renamePdfHelper = renamePdfHelper;
         this.invoker = invoker;
     }
 
@@ -545,6 +548,32 @@ public final class PDFArea {
         }
 
         return response;
+    }
+
+    /**
+     * Renames a PDF file to a new, user-supplied name.
+     * Validates that the input is a PDF and that a non-empty name is supplied, sanitizes
+     * the name (preserving case and spacing), and returns the same PDF content under the
+     * new name ending in ".pdf".
+     *
+     * @param pDFFile     the PDF file to rename
+     * @param newFileName the new name for the file (any typed extension is removed; ".pdf" is enforced)
+     * @return an ExtensionResponse containing the renamed PDF file, or error details
+     */
+    @CatalogRequest(
+            id = "localDomainRequest_57025b28-ca50-484d-b98f-db80cb2b6d3b",
+            name = "Rename PDF File",
+            description = "Rename a PDF file to a new name",
+            area = "PDF",
+            type = CatalogRequest.Type.CHANGE_SYSTEM)
+    @Field.File(name = "Renamed PDF File" , multipleFileUpload = false, required = false, attributes = {@Attribute(name = "visualWidth", value = "S"), @Attribute(name = "toolTip", value = "'The renamed PDF file'")}, options = {})
+    public ExtensionResponse renamePDFFile(
+            @Field.File(name = "PDF File" , multipleFileUpload = false, required = true, attributes = {@Attribute(name = "visualWidth", value = "S"), @Attribute(name = "toolTip", value = "'Upload the PDF file to rename'")}, options = {}) File pDFFile,
+            @Field.Text(name = "New File Name", required = true, attributes = {@Attribute(name = "visualWidth", value = "S"), @Attribute(name = "toolTip", value = "'The new name for the PDF file'")}, options = {}) String newFileName) {
+        logger.info("Rename PDF File");
+        logger.info("PDFArea.renamePdfFile() called with file={}, newName={}",
+                pDFFile != null ? pDFFile.getFileName() : "null", newFileName);
+        return renamePdfHelper.renamePdf(pDFFile, newFileName);
     }
 
     /**

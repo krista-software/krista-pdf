@@ -6,7 +6,7 @@ plugins {
 
 jar.archiveBaseName = "pdf-extension"
 group 'app.krista.extensions.essentials.documents'
-version '2.0.17'
+version '2.0.20'
 
 /*
  * Use extension.name for archiveBaseName, extension.version for version.
@@ -139,8 +139,8 @@ check.dependsOn jacocoTestCoverageVerification
 
 dependencies {
 
-    annotationProcessor 'app.krista:extension-impl-anno-processors:1.0.120'
-    compileOnly 'app.krista:krista-apis:1.0.120'
+    annotationProcessor 'app.krista:extension-impl-anno-processors:1.0.121'
+    compileOnly 'app.krista:krista-apis:1.0.121'
     compileOnly 'org.glassfish.hk2:hk2-api:2.6.1'
     implementation group: 'com.itextpdf', name: 'itextpdf', version: '5.5.13.2'
     implementation 'org.apache.poi:poi-ooxml:5.2.3'

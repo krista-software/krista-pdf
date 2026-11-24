@@ -25,6 +25,7 @@
     * [Split PDF into Pages](pages/SplitPDFIntoPages.md)
     * [Split PDF Into Two Equal Part](pages/SplitPDFBasedOnCondition)
     * [Split PDF Based On Condition](pages/SplitPDFBasedOnCondition.md)
+    * [Rename PDF File](pages/RenamePDFFile.md)
 
 * **Additional Resources**
     * [Release Notes](pages/release-notes.md)

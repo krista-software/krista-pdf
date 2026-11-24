@@ -1,15 +1,226 @@
 # Release Notes - PDF Extension
 
-## Version 2.0.20
+## Version 2.0.24
 
 ### Release Information
 
 | Information                  | Details       |
 |------------------------------|---------------|
-| **Version**                  | 2.0.20        |
-| **Developer**                | Amruta Pawar  |
+| **Version**                  | 2.0.24        |
+| **Ticket**                   | KE-3583       |
+| **Krista Service APIs Java** | 1.0.121       |
+
+---
+
+## What's New in Version 2.0.24
+
+### Feature: Rename PDF File (KE-3583)
+
+Added a new **Rename PDF File** request that takes a PDF file and a new name and returns the
+same PDF content under the new name. The name is sanitized (special characters removed; case
+and spacing preserved) and always ends in `.pdf`. The request validates that the input is a
+PDF and that a usable name is provided, failing fast with a clear message otherwise.
+
+**Files Added**:
+- `helper/RenamePdfHelper.java`
+- `catalog/PDFArea.java` — new `renamePdfFile` request
+- `util/PDFHelper.java` — new `sanitizeFileName` helper
+
+---
+
+## Version 2.0.23
+
+### Release Information
+
+| Information                  | Details       |
+|------------------------------|---------------|
+| **Version**                  | 2.0.23        |
+| **Ticket**                   | KE-3285       |
+| **Developer**                | Simran Sethi  |
 | **Krista Service APIs Java** | 1.0.120       |
-| **Global Catalog Version**   | GC-2026.02.01 |
+| **Global Catalog Version**   | GC-2026.06.01 |
+
+---
+
+## What's New in Version 2.0.23
+
+### Enhancement: Split PDF Performance and File Size Optimisation (KE-3285)
+
+**Background**: Version 2.0.21 introduced a reload-and-remove strategy for all split operations to reduce output file sizes. For large PDFs (9000+ pages, 40 MB+), this caused a severe performance regression — splitting took approximately 7 hours due to reloading the full PDF from disk for every page (O(n²) complexity).
+
+#### Issue 1: Output Page Size Larger Than Source PDF
+
+**Cause**: `importPage()` does not preserve original image stream compression. JBIG2- and CCITT-encoded image streams are decoded and re-encoded as DEFLATE on save, inflating output file sizes. For an 18 MB engineering PDF, page 1 alone could be 25 MB.
+
+**Resolution**: PDFs with ≤ 100 pages use `splitWithRemovePages`, which does not touch stream bytes at all. The original compression codec is preserved, producing output pages proportional in size to their content.
+
+#### Enhancement: Per-Page Split Logging
+
+Added `log.info` for each page split in both strategies:
+
+```
+splitPDF() - Splitting page {n}/{total} from file='{name}'
+splitPDF() - Page {n}/{total} saved as '{file}', sizeBytes={size}
+```
+
+This allows real-time progress monitoring for long-running splits.
+
+**Files Modified**:
+
+- `PDFManager.java` — Replaced single-strategy `splitPDF()` with hybrid `splitWithRemovePages()` / `splitWithImportPage()` routing; added `savePageDoc()` helper with size logging
+- `log4j2.xml` — Changed PDF package logger level from `error` to `info` so split progress logs are visible
+
+**Affected Request**:
+
+- [Split PDF into Pages](pages/SplitPDFIntoPages.md)
+
+### Documentation: Added Known Limitation for Large Image-Heavy PDFs
+
+Added a limitation note to the Split PDF into Pages documentation clarifying that for PDFs with more than 100 pages containing images (scanned documents, engineering drawings), individual split page sizes may be larger than the proportional share of the original file due to image stream re-encoding in the `importPage` strategy.
+
+See [Split PDF into Pages — Limitations](pages/SplitPDFIntoPages.md#limitations).
+
+---
+
+## Version 2.0.22
+
+### Release Information
+
+| Information                  | Details       |
+|------------------------------|---------------|
+| **Version**                  | 2.0.22        |
+| **Developer**                | Simran Sethi  |
+| **Krista Service APIs Java** | 1.0.120       |
+| **Global Catalog Version**   | GC-2026.05.02 |
+
+---
+
+## What's New in Version 2.0.22
+
+### Enhancement: Reduced Merged PDF File Sizes (extends KE-3218)
+
+**Background**: Version 2.0.21 eliminated file size bloat for split operations. This release applies the same
+optimizations to the **Merge PDF Files** operation.
+
+**Issue**: When merging multiple PDFs, each source file brought its own copies of fonts, images, and color profiles
+into the merged output. Pages that used identical resources (e.g., the same embedded font or company logo) each
+carried their own separate copy, causing the merged file to be significantly larger than necessary.
+
+**Resolution**:
+
+Two post-merge optimization steps are now applied to `addMergeFilesToDoc` after `PDFMergerUtility` completes:
+
+1. **Unused resource filtering** (`PdfSplitUtils.filterUnusedPageResources`): Scans each page's content stream and
+   removes any resource dictionary entries (fonts, images, graphics states, color spaces, etc.) that are not actually
+   referenced on that page.
+
+2. **Resource deduplication** (`PdfSplitUtils.deduplicateResources`): Computes a SHA-256 content hash of each
+   resource's COS object tree. When two pages carry byte-identical copies of the same resource, they are rewired to
+   share a single COS object so the resource is written only once on save.
+
+**Important**: The merge path uses `filterUnusedPageResources` (not `stripUnusedResources`) to preserve all
+document-level catalog data — bookmarks, AcroForm fields, XMP metadata, output intents, and structure trees are
+intentionally left intact.
+
+**Result**:
+
+- Merged files are smaller when source PDFs share common resources (fonts, logos, color profiles)
+- No rendering changes — deduplication only collapses byte-identical resources
+- Document-level metadata and bookmarks are fully preserved
+
+**Files Modified**:
+
+- `PDFManager.java` — Added post-merge optimization block in `addMergeFilesToDoc()`
+- `PdfSplitUtils.java` — Extracted `filterUnusedPageResources()` as a public method; added `deduplicateResources()`
+  with full SHA-256 content hashing (`computeContentHash`, `digestCOSTree`, `digestDictEntries`)
+
+**Affected Request**:
+
+- [Merge PDF Files](pages/MergePDFFiles.md)
+
+---
+
+### Test Coverage
+
+Added `PdfSplitUtilsTest` with **100% branch coverage** for the new hashing methods:
+
+- All `digestCOSTree` type branches: `COSStream`, `COSDictionary`, `COSArray`, `COSName`, `COSString`, `COSNumber`,
+  `COSBoolean` (true/false), and the fallback `else` branch via `COSNull`
+- Depth limit guard (`MAX_HASH_DEPTH = 12`) — no `StackOverflowError` on deeply nested structures
+- Cycle detection for self-referencing `COSDictionary` and `COSArray` objects
+- `COSObject` resolution (null inner and non-null inner)
+- `IOException` propagation from broken streams — `computeContentHash` returns `null`, resource is skipped
+- `/Length` key exclusion in `digestDictEntries`
+- All `deduplicateResources` guard conditions (null resources, non-dict category, stream-as-category, null entry)
+
+---
+
+## Version 2.0.21
+
+### Release Information
+
+| Information                  | Details       |
+|------------------------------|---------------|
+| **Version**                  | 2.0.21        |
+| **Developer**                | Simran Sethi  |
+| **Krista Service APIs Java** | 1.0.120       |
+| **Global Catalog Version**   | GC-2026.05.02 |
+
+---
+
+## What's New in Version 2.0.21
+
+### Bug Fixes
+
+#### Fixed: PDF Split File Size Bloat (KE-3218)
+
+**Issue**: When splitting PDF files using any of the split operations (Split PDF, Split PDF into Two Equal Parts, Split PDF at Page Number, Split PDF Based on Condition), each output file was approximately the same size as the original PDF, regardless of how many pages it contained. For example, splitting a 10-page, 5 MB PDF into individual pages would produce 10 files of ~5 MB each (~50 MB total).
+
+**Root Cause**: The split logic used `PDDocument.importPage()` to copy pages into new documents. This method copies all shared resources (fonts, images, color profiles) referenced from the document's Pages tree into each output document, even if the individual page does not use them. As a result, every split file carried the full weight of all shared resources from the original PDF.
+
+**Resolution**:
+- Introduced a new utility class `PdfSplitUtils` implementing a **reload-and-remove** strategy
+- Instead of creating an empty document and importing pages, the new approach reloads the original PDF from disk and removes unwanted pages
+- When `PDDocument.save()` is called, PDFBox's COSWriter only writes objects reachable from the document root, so resources exclusively used by removed pages are automatically omitted
+- Refactored all PDF split methods to use this new strategy:
+  - `PDFManager.splitPDF()` — uses `PdfSplitUtils.createDocumentWithPages()`
+  - `PDFManager.splitPDFIntoParts()` — uses `PdfSplitUtils.createDocumentWithPageRange()`
+  - `PdfSplitter.splitAtPageNumber()` — uses `PdfSplitUtils.createDocumentWithPageRange()`
+  - `PdfSplitter (catalog).splitPdfByCriteria()` — uses `PdfSplitUtils.createDocumentWithPageRange()`
+- Added proper try-with-resources for automatic resource management across all split methods
+- Extracted `PdfSplitter` as a dedicated service class for split-at-page-number operations
+
+**Result**:
+- Each split file now only contains the resources actually used by its pages
+- Total size of all split files is significantly smaller than N × original size
+- No single split file exceeds the size of the original PDF
+
+**Files Modified**:
+- `PDFManager.java` — Refactored `splitPDF()` and `splitPDFIntoParts()` to use `PdfSplitUtils`
+- `PdfSplitter.java` (service) — Refactored `splitAtPageNumber()` to use reload-and-remove via `PdfSplitUtils`
+- `PdfSplitter.java` (catalog/utils) — Refactored `splitPdfByCriteria()` to use `PdfSplitUtils`
+
+**Files Added**:
+- `PdfSplitUtils.java` — New utility class with `createDocumentWithPages()` and `createDocumentWithPageRange()` methods
+
+**Affected Requests**:
+- [Split PDF](pages/SplitPDF.md)
+- [Split PDF into Two Equal Parts](pages/SplitPDFIntoTwoEqualParts.md)
+- [Split PDF at Page Number](pages/SplitPDFAtPageNumber.md)
+- [Split PDF Based on Condition](pages/SplitPDFBasedOnCondition.md)
+
+---
+
+## Version 2.0.20
+
+### Release Information
+
+| Information                  | Details      |
+|------------------------------|--------------|
+| **Version**                  | 2.0.20       |
+| **Developer**                | Amruta Pawar |
+| **Krista Service APIs Java** | 1.0.120      |
+| **Global Catalog Version**   | GC-2026.5.2  |
 
 ---
 

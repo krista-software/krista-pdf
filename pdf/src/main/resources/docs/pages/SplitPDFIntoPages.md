@@ -195,6 +195,7 @@ Output: ["page_1.pdf", "page_2.pdf", ...]
 3. **Large PDFs**: Very large PDF files may impact performance or cause memory issues
 4. **Page Content**: Each page is extracted as-is; no content modification
 5. **Bookmarks**: PDF bookmarks are not preserved in split files
+6. **Output Page Size Variability for Large Image-Heavy PDFs**: For PDF files with more than 100 pages that contain images (e.g. scanned documents, engineering drawings, image-based reports), the size of each individual split page may vary significantly and may be larger than expected. This occurs because PDFs above the 100-page threshold use a page import strategy that re-encodes image streams, which does not preserve the original compression format (e.g. JBIG2, CCITT). As a result, individual split pages from image-heavy PDFs may be larger than the proportional size of the original file.
 
 ## Best Practices
 
